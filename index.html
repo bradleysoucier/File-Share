@@ -79,7 +79,7 @@
             display: none;
         }
         
-        .upload-btn, .download-btn, .delete-btn {
+        .upload-btn, .download-btn, .delete-btn, .preview-btn, .action-btn {
             position: relative;
             overflow: hidden;
             transition: background-color 0.3s;
@@ -166,6 +166,20 @@
             background-color: #38a169;
         }
         
+        .preview-btn {
+            background-color: #4299e1;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .preview-btn:hover {
+            background-color: #3182ce;
+        }
+        
         .delete-btn {
             background-color: #f56565;
             color: white;
@@ -227,6 +241,69 @@
             font-size: 0.9rem;
         }
         
+        /* Preview page styles */
+        .preview-container {
+            text-align: center;
+            padding: 20px;
+        }
+        
+        .preview-icon {
+            font-size: 64px;
+            color: #4299e1;
+            margin-bottom: 20px;
+        }
+        
+        .preview-info {
+            margin-bottom: 30px;
+        }
+        
+        .preview-actions {
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 30px;
+        }
+        
+        .action-btn {
+            background-color: #4299e1;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            text-decoration: none;
+            display: inline-block;
+        }
+        
+        .action-btn.download {
+            background-color: #48bb78;
+        }
+        
+        .action-btn.download:hover {
+            background-color: #38a169;
+        }
+        
+        .action-btn.direct {
+            background-color: #ed8936;
+        }
+        
+        .action-btn.direct:hover {
+            background-color: #dd771c;
+        }
+        
+        .back-btn {
+            display: inline-block;
+            margin-top: 20px;
+            color: #4299e1;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .back-btn:hover {
+            text-decoration: underline;
+        }
+        
         /* Ripple effect styles */
         .ripple {
             position: absolute;
@@ -259,11 +336,16 @@
                 width: 100%;
                 justify-content: flex-end;
             }
+            
+            .preview-actions {
+                flex-direction: column;
+                align-items: center;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
+    <div class="container" id="mainContainer">
         <header>
             <h1>Simple File Share</h1>
             <p class="subtitle">Upload and share files instantly. No login required.</p>
@@ -283,11 +365,28 @@
             </div>
         </section>
     </div>
+
+    <div class="container" id="previewContainer" style="display: none;">
+        <div class="preview-container">
+            <div class="preview-icon" id="previewIcon">📄</div>
+            <div class="preview-info">
+                <h2 id="previewFileName">File Name</h2>
+                <p id="previewFileSize">File Size</p>
+                <p id="previewUploadDate">Uploaded on: </p>
+            </div>
+            <div class="preview-actions">
+                <a href="#" class="action-btn download" id="downloadAction">Download</a>
+                <a href="#" class="action-btn direct" id="directAction">View in Browser</a>
+                <button class="action-btn" id="copyLinkBtn">Copy Share Link</button>
+            </div>
+            <a href="#" class="back-btn" id="backToMain">← Back to File List</a>
+        </div>
+    </div>
     
     <div id="notification" class="notification"></div>
     
     <footer>
-        <p>Simple File Share &copy; 2025 | Powered by Supabase</p>
+        <p>Simple File Share &copy; 2023 | Powered by Supabase</p>
     </footer>
 
     <script>
@@ -299,11 +398,26 @@
         const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
         
         // DOM elements
+        const mainContainer = document.getElementById('mainContainer');
+        const previewContainer = document.getElementById('previewContainer');
         const uploadSection = document.getElementById('uploadSection');
         const fileInput = document.getElementById('fileInput');
         const uploadBtn = document.getElementById('uploadBtn');
         const fileListContainer = document.getElementById('fileListContainer');
         const notification = document.getElementById('notification');
+        
+        // Preview elements
+        const previewIcon = document.getElementById('previewIcon');
+        const previewFileName = document.getElementById('previewFileName');
+        const previewFileSize = document.getElementById('previewFileSize');
+        const previewUploadDate = document.getElementById('previewUploadDate');
+        const downloadAction = document.getElementById('downloadAction');
+        const directAction = document.getElementById('directAction');
+        const copyLinkBtn = document.getElementById('copyLinkBtn');
+        const backToMain = document.getElementById('backToMain');
+        
+        // Current file being previewed
+        let currentPreviewFile = null;
         
         // Event listeners
         document.addEventListener('DOMContentLoaded', function() {
@@ -314,18 +428,203 @@
             uploadSection.addEventListener('dragleave', handleDragLeave);
             uploadSection.addEventListener('drop', handleDrop);
             
+            // Preview actions
+            downloadAction.addEventListener('click', handleDownloadAction);
+            directAction.addEventListener('click', handleDirectAction);
+            copyLinkBtn.addEventListener('click', handleCopyLink);
+            backToMain.addEventListener('click', showMainView);
+            
             // Add ripple effect to all buttons
             document.addEventListener('click', function(e) {
-                if (e.target.classList.contains('upload-btn') || 
-                    e.target.classList.contains('download-btn') || 
-                    e.target.classList.contains('delete-btn')) {
+                if (e.target.tagName === 'BUTTON' || e.target.classList.contains('action-btn')) {
                     createRipple(e);
                 }
             });
             
-            // Load files on page load
-            loadFiles();
+            // Check URL parameters on load
+            checkUrlParams();
         });
+        
+        // Check URL parameters and route accordingly
+        function checkUrlParams() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const fileId = urlParams.get('fid');
+            const action = urlParams.get('action');
+            
+            if (fileId && action) {
+                handleUrlAction(fileId, action);
+            } else {
+                // No URL parameters, show main view
+                loadFiles();
+            }
+        }
+        
+        // Handle URL actions
+        async function handleUrlAction(fileId, action) {
+            try {
+                // Get file info from database
+                const { data: file, error } = await supabase
+                    .from('shared_files')
+                    .select('*')
+                    .eq('id', fileId)
+                    .single();
+                
+                if (error) throw error;
+                
+                switch (action) {
+                    case 'preview':
+                        showPreview(file);
+                        break;
+                    case 'download':
+                        await downloadFileDirect(file);
+                        break;
+                    case 'direct':
+                        await redirectToCdn(file);
+                        break;
+                    default:
+                        showMainView();
+                        break;
+                }
+            } catch (error) {
+                console.error('Error handling URL action:', error);
+                showNotification('File not found', 'error');
+                showMainView();
+            }
+        }
+        
+        // Show file preview
+        function showPreview(file) {
+            currentPreviewFile = file;
+            
+            // Update preview elements
+            previewFileName.textContent = file.name;
+            previewFileSize.textContent = formatFileSize(file.size);
+            previewUploadDate.textContent = `Uploaded on: ${new Date(file.uploaded_at).toLocaleDateString()}`;
+            
+            // Set file icon based on file type
+            const fileExt = file.name.split('.').pop().toLowerCase();
+            previewIcon.textContent = getFileIcon(fileExt);
+            
+            // Update action links
+            downloadAction.href = `?fid=${file.id}&action=download`;
+            directAction.href = `?fid=${file.id}&action=direct`;
+            
+            // Show preview, hide main
+            mainContainer.style.display = 'none';
+            previewContainer.style.display = 'block';
+        }
+        
+        // Get appropriate file icon
+        function getFileIcon(extension) {
+            const iconMap = {
+                'pdf': '📕',
+                'doc': '📘',
+                'docx': '📘',
+                'txt': '📄',
+                'jpg': '🖼️',
+                'jpeg': '🖼️',
+                'png': '🖼️',
+                'gif': '🖼️',
+                'mp4': '🎬',
+                'avi': '🎬',
+                'mov': '🎬',
+                'mp3': '🎵',
+                'wav': '🎵',
+                'zip': '📦',
+                'rar': '📦'
+            };
+            
+            return iconMap[extension] || '📄';
+        }
+        
+        // Handle download action from preview
+        async function handleDownloadAction(e) {
+            e.preventDefault();
+            if (currentPreviewFile) {
+                await downloadFileDirect(currentPreviewFile);
+            }
+        }
+        
+        // Handle direct action from preview
+        async function handleDirectAction(e) {
+            e.preventDefault();
+            if (currentPreviewFile) {
+                await redirectToCdn(currentPreviewFile);
+            }
+        }
+        
+        // Handle copy link button
+        async function handleCopyLink(e) {
+            e.preventDefault();
+            if (currentPreviewFile) {
+                const shareUrl = `${window.location.origin}${window.location.pathname}?fid=${currentPreviewFile.id}&action=preview`;
+                try {
+                    await navigator.clipboard.writeText(shareUrl);
+                    showNotification('Share link copied to clipboard!', 'success');
+                } catch (err) {
+                    console.error('Failed to copy: ', err);
+                    showNotification('Failed to copy link', 'error');
+                }
+            }
+        }
+        
+        // Show main view
+        function showMainView(e) {
+            if (e) e.preventDefault();
+            
+            // Update URL without page reload
+            window.history.pushState({}, '', window.location.pathname);
+            
+            // Show main, hide preview
+            mainContainer.style.display = 'block';
+            previewContainer.style.display = 'none';
+            
+            // Load files if not already loaded
+            if (fileListContainer.innerHTML.includes('Loading files')) {
+                loadFiles();
+            }
+        }
+        
+        // Download file directly (without redirect)
+        async function downloadFileDirect(file) {
+            try {
+                // Get download URL from Supabase Storage
+                const { data, error } = await supabase.storage
+                    .from('files')
+                    .createSignedUrl(file.storage_path, 60); // URL valid for 60 seconds
+                
+                if (error) throw error;
+                
+                // Create a temporary link to trigger download
+                const link = document.createElement('a');
+                link.href = data.signedUrl;
+                link.download = file.name;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                showNotification('Download started', 'success');
+            } catch (error) {
+                console.error('Error downloading file:', error);
+                showNotification('Failed to download file', 'error');
+            }
+        }
+        
+        // Redirect to CDN view
+        async function redirectToCdn(file) {
+            try {
+                // Get public URL from Supabase Storage
+                const { data } = supabase.storage
+                    .from('files')
+                    .getPublicUrl(file.storage_path);
+                
+                // Redirect to the public URL
+                window.location.href = data.publicUrl;
+            } catch (error) {
+                console.error('Error redirecting to CDN:', error);
+                showNotification('Failed to open file', 'error');
+            }
+        }
         
         // Drag and drop handlers
         function handleDragOver(e) {
@@ -430,14 +729,17 @@
                 fileItem.className = 'file-item';
                 
                 const fileSize = formatFileSize(file.size);
+                const fileExt = file.name.split('.').pop().toLowerCase();
+                const fileIcon = getFileIcon(fileExt);
                 
                 fileItem.innerHTML = `
                     <div class="file-info">
-                        <span class="file-icon">📄</span>
+                        <span class="file-icon">${fileIcon}</span>
                         <span class="file-name">${file.name}</span>
                         <span class="file-size">${fileSize}</span>
                     </div>
                     <div class="file-actions">
+                        <button class="preview-btn" data-id="${file.id}">Preview</button>
                         <button class="download-btn" data-id="${file.id}" data-path="${file.storage_path}" data-name="${file.name}">Download</button>
                         <button class="delete-btn" data-id="${file.id}" data-path="${file.storage_path}">Delete</button>
                     </div>
@@ -450,42 +752,31 @@
             fileListContainer.appendChild(fileList);
             
             // Add event listeners to buttons
+            document.querySelectorAll('.preview-btn').forEach(btn => {
+                btn.addEventListener('click', function() {
+                    const fileId = this.getAttribute('data-id');
+                    // Update URL and show preview
+                    window.history.pushState({}, '', `?fid=${fileId}&action=preview`);
+                    // Find the file data and show preview
+                    const file = files.find(f => f.id == fileId);
+                    if (file) showPreview(file);
+                });
+            });
+            
             document.querySelectorAll('.download-btn').forEach(btn => {
-                btn.addEventListener('click', downloadFile);
+                btn.addEventListener('click', function() {
+                    const fileId = this.getAttribute('data-id');
+                    const filePath = this.getAttribute('data-path');
+                    const fileName = this.getAttribute('data-name');
+                    // Find the file data and download
+                    const file = files.find(f => f.id == fileId);
+                    if (file) downloadFileDirect(file);
+                });
             });
             
             document.querySelectorAll('.delete-btn').forEach(btn => {
                 btn.addEventListener('click', deleteFile);
             });
-        }
-        
-        // Download file
-        async function downloadFile(e) {
-            const fileId = e.target.getAttribute('data-id');
-            const filePath = e.target.getAttribute('data-path');
-            const fileName = e.target.getAttribute('data-name');
-            
-            try {
-                // Get download URL from Supabase Storage
-                const { data, error } = await supabase.storage
-                    .from('files')
-                    .createSignedUrl(filePath, 60); // URL valid for 60 seconds
-                
-                if (error) throw error;
-                
-                // Create a temporary link to trigger download
-                const link = document.createElement('a');
-                link.href = data.signedUrl;
-                link.download = fileName;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                
-                showNotification('Download started', 'success');
-            } catch (error) {
-                console.error('Error downloading file:', error);
-                showNotification('Failed to download file', 'error');
-            }
         }
         
         // Delete file
@@ -515,6 +806,11 @@
                 
                 showNotification('File deleted successfully', 'success');
                 loadFiles(); // Refresh file list
+                
+                // If we're currently previewing the deleted file, go back to main
+                if (currentPreviewFile && currentPreviewFile.id == fileId) {
+                    showMainView();
+                }
             } catch (error) {
                 console.error('Error deleting file:', error);
                 showNotification('Failed to delete file', 'error');
@@ -562,6 +858,11 @@
             
             button.appendChild(circle);
         }
+        
+        // Handle browser back/forward buttons
+        window.addEventListener('popstate', function() {
+            checkUrlParams();
+        });
     </script>
 </body>
 </html>
