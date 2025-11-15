@@ -304,6 +304,66 @@
             text-decoration: underline;
         }
         
+        /* File preview styles */
+        .file-preview {
+            max-width: 100%;
+            margin: 20px 0;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        .image-preview {
+            max-width: 100%;
+            max-height: 400px;
+            object-fit: contain;
+        }
+        
+        .video-preview {
+            width: 100%;
+            max-width: 600px;
+            height: auto;
+        }
+        
+        .audio-preview {
+            width: 100%;
+            max-width: 500px;
+            margin: 20px 0;
+        }
+        
+        .pdf-preview {
+            width: 100%;
+            height: 500px;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+        }
+        
+        .text-preview {
+            width: 100%;
+            max-height: 400px;
+            padding: 20px;
+            background-color: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            text-align: left;
+            overflow: auto;
+            white-space: pre-wrap;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+        }
+        
+        .unsupported-preview {
+            padding: 40px;
+            background-color: #f7fafc;
+            border: 2px dashed #cbd5e0;
+            border-radius: 8px;
+            color: #718096;
+        }
+        
+        .preview-loading {
+            padding: 40px;
+            color: #718096;
+        }
+        
         /* Ripple effect styles */
         .ripple {
             position: absolute;
@@ -341,6 +401,10 @@
                 flex-direction: column;
                 align-items: center;
             }
+            
+            .pdf-preview {
+                height: 300px;
+            }
         }
     </style>
 </head>
@@ -374,6 +438,11 @@
                 <p id="previewFileSize">File Size</p>
                 <p id="previewUploadDate">Uploaded on: </p>
             </div>
+            
+            <div id="filePreviewContainer">
+                <div class="preview-loading">Loading file preview...</div>
+            </div>
+            
             <div class="preview-actions">
                 <a href="#" class="action-btn download" id="downloadAction">Download</a>
                 <a href="#" class="action-btn direct" id="directAction">View in Browser</a>
@@ -411,6 +480,7 @@
         const previewFileName = document.getElementById('previewFileName');
         const previewFileSize = document.getElementById('previewFileSize');
         const previewUploadDate = document.getElementById('previewUploadDate');
+        const filePreviewContainer = document.getElementById('filePreviewContainer');
         const downloadAction = document.getElementById('downloadAction');
         const directAction = document.getElementById('directAction');
         const copyLinkBtn = document.getElementById('copyLinkBtn');
@@ -493,7 +563,7 @@
         }
         
         // Show file preview
-        function showPreview(file) {
+        async function showPreview(file) {
             currentPreviewFile = file;
             
             // Update preview elements
@@ -509,9 +579,112 @@
             downloadAction.href = `?fid=${file.id}&action=download`;
             directAction.href = `?fid=${file.id}&action=direct`;
             
+            // Load and display file preview
+            await loadFilePreview(file);
+            
             // Show preview, hide main
             mainContainer.style.display = 'none';
             previewContainer.style.display = 'block';
+        }
+        
+        // Load and display file preview
+        async function loadFilePreview(file) {
+            filePreviewContainer.innerHTML = '<div class="preview-loading">Loading file preview...</div>';
+            
+            try {
+                // Get public URL from Supabase Storage
+                const { data } = supabase.storage
+                    .from('files')
+                    .getPublicUrl(file.storage_path);
+                
+                const fileUrl = data.publicUrl;
+                const fileExt = file.name.split('.').pop().toLowerCase();
+                
+                // Display appropriate preview based on file type
+                if (isImageFile(fileExt)) {
+                    filePreviewContainer.innerHTML = `
+                        <img src="${fileUrl}" alt="${file.name}" class="file-preview image-preview" onerror="handlePreviewError(this)">
+                    `;
+                } else if (isVideoFile(fileExt)) {
+                    filePreviewContainer.innerHTML = `
+                        <video controls class="file-preview video-preview">
+                            <source src="${fileUrl}" type="video/mp4">
+                            Your browser does not support the video tag.
+                        </video>
+                    `;
+                } else if (isAudioFile(fileExt)) {
+                    filePreviewContainer.innerHTML = `
+                        <audio controls class="file-preview audio-preview">
+                            <source src="${fileUrl}" type="audio/mpeg">
+                            Your browser does not support the audio element.
+                        </audio>
+                    `;
+                } else if (fileExt === 'pdf') {
+                    filePreviewContainer.innerHTML = `
+                        <iframe src="${fileUrl}" class="file-preview pdf-preview" title="${file.name}"></iframe>
+                    `;
+                } else if (isTextFile(fileExt)) {
+                    // For text files, fetch and display the content
+                    const response = await fetch(fileUrl);
+                    const text = await response.text();
+                    filePreviewContainer.innerHTML = `
+                        <div class="file-preview text-preview">${escapeHtml(text)}</div>
+                    `;
+                } else {
+                    filePreviewContainer.innerHTML = `
+                        <div class="file-preview unsupported-preview">
+                            <div class="preview-icon">📄</div>
+                            <p>Preview not available for this file type</p>
+                            <p>Click "Download" to get the file</p>
+                        </div>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading file preview:', error);
+                filePreviewContainer.innerHTML = `
+                    <div class="file-preview unsupported-preview">
+                        <div class="preview-icon">❌</div>
+                        <p>Error loading preview</p>
+                        <p>Click "Download" to get the file</p>
+                    </div>
+                `;
+            }
+        }
+        
+        // Handle image loading errors
+        function handlePreviewError(img) {
+            img.style.display = 'none';
+            filePreviewContainer.innerHTML = `
+                <div class="file-preview unsupported-preview">
+                    <div class="preview-icon">🖼️</div>
+                    <p>Image preview not available</p>
+                    <p>Click "Download" to get the file</p>
+                </div>
+            `;
+        }
+        
+        // File type detection functions
+        function isImageFile(ext) {
+            return ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg'].includes(ext);
+        }
+        
+        function isVideoFile(ext) {
+            return ['mp4', 'avi', 'mov', 'wmv', 'flv', 'webm', 'mkv'].includes(ext);
+        }
+        
+        function isAudioFile(ext) {
+            return ['mp3', 'wav', 'ogg', 'm4a', 'flac'].includes(ext);
+        }
+        
+        function isTextFile(ext) {
+            return ['txt', 'csv', 'json', 'xml', 'html', 'css', 'js', 'md', 'log'].includes(ext);
+        }
+        
+        // Escape HTML to prevent XSS
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
         }
         
         // Get appropriate file icon
