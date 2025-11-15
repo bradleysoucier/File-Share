@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simple No-Login File Share</title>
+  <style>
+    body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; max-width: 900px; margin: 32px auto; padding: 0 18px; color:#0b1220; }
+    header { display:flex; align-items:center; gap:12px; }
+    h1 { margin:0; font-size:1.4rem; }
+    .card { border:1px solid #e6e9ef; padding:16px; border-radius:10px; margin-top:18px; box-shadow: 0 6px 18px rgba(16,24,40,0.03); }
+    label{display:block; margin-bottom:8px}
+    input[type="file"]{display:block; margin-bottom:10px}
+    button{background:#0b5fff;color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+    button[disabled]{opacity:0.5; cursor:not-allowed}
+    .file-list{margin-top:12px}
+    .file-row{padding:8px 0;border-bottom:1px dashed #f1f3f6;display:flex; justify-content:space-between; align-items:center; gap:12px}
+    .meta{font-size:0.9rem;color:#374151}
+    progress{width:180px; height:12px}
+    .small{font-size:0.85rem;color:#6b7280}
+    footer{margin-top:28px;font-size:0.85rem;color:#6b7280}
+    .danger{color:#b91c1c}
+    .hint{font-size:0.85rem;color:#374151}
+  </style>
+  <!-- Supabase JS CDN (no build step) -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+  <header>
+    <h1>Simple No-Login File Share</h1>
+  </header>
+
+  <div class="card">
+    <div>
+      <label for="file">Choose file to upload</label>
+      <input id="file" type="file" />
+      <div style="display:flex; gap:8px; align-items:center; margin-bottom:8px;">
+        <button id="uploadBtn">Upload</button>
+        <progress id="progress" value="0" max="100" style="display:none"></progress>
+        <span id="status" class="small"></span>
+      </div>
+      <div class="hint">Files are stored in a public Supabase Storage bucket and listed below. <span class="danger">Do not upload secrets.</span></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top:18px">
+    <h3 style="margin:0 0 8px 0">Recent uploads</h3>
+    <div id="files" class="file-list">
+      <div class="small">Loading files…</div>
+    </div>
+  </div>
+
+  <footer>
+    <div class="small">Instructions: replace <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> in the script below. Make a public storage bucket named <code>uploads</code>.</div>
+  </footer>
+
+  <script>
+    // ---------- CONFIG: replace these with your project's values ----------
+    const SUPABASE_URL = "https://YOUR-SUPABASE-URL.supabase.co"; // <-- e.g. https://abcd1234xyz.supabase.co
+    const SUPABASE_ANON_KEY = "YOUR_SUPABASE_ANON_KEY";           // <-- paste anon/public anon key here
+    const STORAGE_BUCKET = "uploads"; // bucket name (must be created in Supabase and made public)
+    // --------------------------------------------------------------------
+
+    // Initialize supabase client
+    const supabase = supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+    const fileInput = document.getElementById('file');
+    const uploadBtn = document.getElementById('uploadBtn');
+    const statusSpan = document.getElementById('status');
+    const progressEl = document.getElementById('progress');
+    const filesDiv = document.getElementById('files');
+
+    // Utility: pretty file size
+    function humanSize(bytes) {
+      if (bytes === null || bytes === undefined) return '';
+      const thresh = 1024;
+      if (Math.abs(bytes) < thresh) return bytes + ' B';
+      const units = ['KB','MB','GB','TB'];
+      let u = -1;
+      do {
+        bytes /= thresh;
+        ++u;
+      } while (Math.abs(bytes) >= thresh && u < units.length - 1);
+      return bytes.toFixed(1) + ' ' + units[u];
+    }
+
+    // Load recent files from metadata table
+    async function loadFiles() {
+      filesDiv.innerHTML = '<div class="small">Loading files…</div>';
+      try {
+        const { data, error } = await supabase
+          .from('files')
+          .select('*')
+          .order('created_at', { ascending: false })
+          .limit(50);
+
+        if (error) throw error;
+        if (!data || data.length === 0) {
+          filesDiv.innerHTML = '<div class="small">No files uploaded yet.</div>';
+          return;
+        }
+
+        filesDiv.innerHTML = '';
+        for (const f of data) {
+          const pub = supabase.storage.from(STORAGE_BUCKET).getPublicUrl(f.path).publicUrl;
+          const row = document.createElement('div');
+          row.className = 'file-row';
+          row.innerHTML = `
+            <div style="flex:1; min-width:0">
+              <div><a href="${pub}" target="_blank" rel="noopener noreferrer">${escapeHtml(f.name)}</a></div>
+              <div class="meta">${humanSize(f.size)} • ${new Date(f.created_at).toLocaleString()}</div>
+            </div>
+            <div style="white-space:nowrap">
+              <a href="${pub}" download class="small">Download</a>
+            </div>`;
+          filesDiv.appendChild(row);
+        }
+      } catch (err) {
+        console.error(err);
+        filesDiv.innerHTML = '<div class="small danger">Failed to load files.</div>';
+      }
+    }
+
+    // Escape HTML to prevent injection in listing
+    function escapeHtml(s) {
+      return (s + '')
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+
+    // Upload handler
+    uploadBtn.addEventListener('click', async () => {
+      const file = fileInput.files[0];
+      if (!file) {
+        statusSpan.textContent = 'Select a file first';
+        return;
+      }
+
+      uploadBtn.disabled = true;
+      progressEl.style.display = 'inline-block';
+      progressEl.value = 0;
+      statusSpan.textContent = 'Uploading...';
+
+      // Create a safe path: timestamp-random-originalname
+      const timestamp = Date.now();
+      const rand = Math.floor(Math.random() * 1e9);
+      // sanitize filename a bit
+      const sanitized = file.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9_.-]/g, "");
+      const path = `${timestamp}-${rand}-${sanitized}`;
+
+      try {
+        // Use the storage upload with an onUploadProgress callback if available
+        // The supabase-js v2 CDN does not expose progress in upload; we can perform a minimal chunked upload via fetch + signed URL,
+        // but to keep things simple we call storage.upload directly (progress may not be available in some environments).
+        const { data: uploadData, error: uploadError } = await supabase.storage
+          .from(STORAGE_BUCKET)
+          .upload(path, file, { cacheControl: '3600', upsert: false });
+
+        if (uploadError) throw uploadError;
+
+        // Insert metadata into files table
+        const insertRecord = {
+          name: file.name,
+          path: path,
+          size: file.size,
+          mime: file.type || null
+        };
+
+        const { data: insertData, error: insertError } = await supabase
+          .from('files')
+          .insert([insertRecord]);
+
+        if (insertError) throw insertError;
+
+        statusSpan.textContent = 'Upload complete';
+        fileInput.value = '';
+        await loadFiles();
+      } catch (err) {
+        console.error(err);
+        statusSpan.textContent = 'Upload failed: ' + (err.message || JSON.stringify(err));
+      } finally {
+        uploadBtn.disabled = false;
+        progressEl.style.display = 'none';
+      }
+    });
+
+    // On load
+    loadFiles();
+
+  </script>
+</body>
+</html>
