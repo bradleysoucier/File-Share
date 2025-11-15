@@ -14,7 +14,7 @@
         }
         
         body {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-color: white;
             min-height: 100vh;
             display: flex;
             flex-direction: column;
@@ -28,9 +28,10 @@
             max-width: 800px;
             background-color: white;
             border-radius: 12px;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
             padding: 30px;
             margin-top: 20px;
+            border: 1px solid #eaeaea;
         }
         
         header {
@@ -39,7 +40,7 @@
         }
         
         h1 {
-            color: #4a5568;
+            color: #2d3748;
             margin-bottom: 10px;
             font-size: 2.2rem;
         }
@@ -59,13 +60,13 @@
         }
         
         .upload-section:hover {
-            border-color: #667eea;
+            border-color: #4299e1;
             background-color: #f7fafc;
         }
         
         .upload-icon {
             font-size: 48px;
-            color: #667eea;
+            color: #4299e1;
             margin-bottom: 15px;
         }
         
@@ -78,19 +79,24 @@
             display: none;
         }
         
+        .upload-btn, .download-btn, .delete-btn {
+            position: relative;
+            overflow: hidden;
+            transition: background-color 0.3s;
+        }
+        
         .upload-btn {
-            background-color: #667eea;
+            background-color: #4299e1;
             color: white;
             border: none;
             padding: 12px 24px;
             border-radius: 6px;
             cursor: pointer;
             font-size: 16px;
-            transition: background-color 0.3s;
         }
         
         .upload-btn:hover {
-            background-color: #5a6fd8;
+            background-color: #3182ce;
         }
         
         .files-section h2 {
@@ -126,7 +132,7 @@
         
         .file-icon {
             margin-right: 12px;
-            color: #667eea;
+            color: #4299e1;
             font-size: 20px;
         }
         
@@ -154,7 +160,6 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 14px;
-            transition: background-color 0.3s;
         }
         
         .download-btn:hover {
@@ -169,7 +174,6 @@
             border-radius: 4px;
             cursor: pointer;
             font-size: 14px;
-            transition: background-color 0.3s;
         }
         
         .delete-btn:hover {
@@ -219,8 +223,25 @@
         footer {
             margin-top: 30px;
             text-align: center;
-            color: white;
+            color: #718096;
             font-size: 0.9rem;
+        }
+        
+        /* Ripple effect styles */
+        .ripple {
+            position: absolute;
+            border-radius: 50%;
+            background-color: rgba(255, 255, 255, 0.7);
+            transform: scale(0);
+            animation: ripple 0.6s linear;
+            pointer-events: none;
+        }
+        
+        @keyframes ripple {
+            to {
+                transform: scale(4);
+                opacity: 0;
+            }
         }
         
         @media (max-width: 600px) {
@@ -266,16 +287,16 @@
     <div id="notification" class="notification"></div>
     
     <footer>
-        <p>Simple File Share &copy; 2023 | Powered by Supabase</p>
+        <p>Simple File Share &copy; 2025 | Powered by Supabase</p>
     </footer>
 
     <script>
-        // Supabase configuration
+        // Initialize Supabase client first
         const supabaseUrl = 'https://hxrpprygequjwsxxkkjd.supabase.co';
         const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imh4cnBwcnlnZXF1andzeHhra2pkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMyMTg0MTQsImV4cCI6MjA3ODc5NDQxNH0.7vqe-9pJlwc3yv_Kv6LiA400e24ARMe7CGItdwsI7YE';
         
         // Initialize Supabase client
-        const supabase = supabase.createClient(supabaseUrl, supabaseKey);
+        const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
         
         // DOM elements
         const uploadSection = document.getElementById('uploadSection');
@@ -285,18 +306,40 @@
         const notification = document.getElementById('notification');
         
         // Event listeners
-        uploadBtn.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', handleFileUpload);
-        uploadSection.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadSection.style.borderColor = '#667eea';
-            uploadSection.style.backgroundColor = '#f0f4ff';
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize the app once DOM is loaded
+            uploadBtn.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', handleFileUpload);
+            uploadSection.addEventListener('dragover', handleDragOver);
+            uploadSection.addEventListener('dragleave', handleDragLeave);
+            uploadSection.addEventListener('drop', handleDrop);
+            
+            // Add ripple effect to all buttons
+            document.addEventListener('click', function(e) {
+                if (e.target.classList.contains('upload-btn') || 
+                    e.target.classList.contains('download-btn') || 
+                    e.target.classList.contains('delete-btn')) {
+                    createRipple(e);
+                }
+            });
+            
+            // Load files on page load
+            loadFiles();
         });
-        uploadSection.addEventListener('dragleave', () => {
+        
+        // Drag and drop handlers
+        function handleDragOver(e) {
+            e.preventDefault();
+            uploadSection.style.borderColor = '#4299e1';
+            uploadSection.style.backgroundColor = '#f0f4ff';
+        }
+        
+        function handleDragLeave() {
             uploadSection.style.borderColor = '#cbd5e0';
             uploadSection.style.backgroundColor = '';
-        });
-        uploadSection.addEventListener('drop', (e) => {
+        }
+        
+        function handleDrop(e) {
             e.preventDefault();
             uploadSection.style.borderColor = '#cbd5e0';
             uploadSection.style.backgroundColor = '';
@@ -304,10 +347,7 @@
             if (e.dataTransfer.files.length) {
                 handleFiles(e.dataTransfer.files);
             }
-        });
-        
-        // Load files on page load
-        document.addEventListener('DOMContentLoaded', loadFiles);
+        }
         
         // Handle file upload
         async function handleFileUpload(e) {
@@ -500,6 +540,27 @@
             setTimeout(() => {
                 notification.classList.remove('show');
             }, 3000);
+        }
+        
+        // Create ripple effect
+        function createRipple(event) {
+            const button = event.currentTarget;
+            const circle = document.createElement("span");
+            const diameter = Math.max(button.clientWidth, button.clientHeight);
+            const radius = diameter / 2;
+            
+            const rect = button.getBoundingClientRect();
+            circle.style.width = circle.style.height = `${diameter}px`;
+            circle.style.left = `${event.clientX - rect.left - radius}px`;
+            circle.style.top = `${event.clientY - rect.top - radius}px`;
+            circle.classList.add("ripple");
+            
+            const ripple = button.getElementsByClassName("ripple")[0];
+            if (ripple) {
+                ripple.remove();
+            }
+            
+            button.appendChild(circle);
         }
     </script>
 </body>
